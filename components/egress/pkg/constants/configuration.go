@@ -39,6 +39,9 @@ const (
 	EnvNameserverExempt          = "OPENSANDBOX_EGRESS_NAMESERVER_EXEMPT"
 	EnvCredentialVaultRequireTLS = "OPENSANDBOX_EGRESS_CREDENTIAL_VAULT_REQUIRE_TLS"
 
+	EnvEgressAPIProxyEnabled    = "OPENSANDBOX_EGRESS_API_PROXY_ENABLED"
+	EnvEgressAPIProxyListenAddr = "OPENSANDBOX_EGRESS_API_PROXY_LISTEN_ADDR"
+
 	// MITM: mitmdump transparent; Linux + CAP_NET_ADMIN, runs as a dedicated user.
 	// Static mitm options (mode, connection_strategy, listen_host, stream_large_bodies,
 	// ignore_hosts, ssl_verify_upstream_trusted_confdir default) live in
@@ -68,6 +71,8 @@ const (
 	ResolvNameserverCap          = 10
 	DefaultMaxEgressRules        = 4096
 	DefaultDNSUpstreamTimeoutSec = 5
+
+	DefaultEgressAPIProxyAddr = "127.0.0.1:18082"
 
 	OpenSandboxRootDir = "/opt/opensandbox"
 )
