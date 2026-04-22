@@ -59,8 +59,9 @@ func patchMergedPolicy(base *policy.NetworkPolicy, patchRules []policy.EgressRul
 }
 
 type apiProxyStatus struct {
-	Enabled       bool `json:"enabled"`
+	Enabled      bool `json:"enabled"`
 	IdentityReady bool `json:"identity_ready"`
+	AuthTokenSet bool `json:"auth_token_set"`
 	RouteCount    int  `json:"route_count"`
 }
 
@@ -81,6 +82,7 @@ func apiProxyStatusFromPolicy(p *policy.NetworkPolicy) *apiProxyStatus {
 	return &apiProxyStatus{
 		Enabled:       p.APIProxy.Enabled,
 		IdentityReady: p.APIProxy.Identity.IsReady(),
+		AuthTokenSet:  p.APIProxy.AuthToken != "",
 		RouteCount:    len(p.APIProxy.Routes),
 	}
 }
