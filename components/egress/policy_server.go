@@ -188,6 +188,7 @@ type policyStatusResponse struct {
 	EnforcementMode string `json:"enforcementMode,omitempty"`
 	Reason          string `json:"reason,omitempty"`
 	Policy          any    `json:"policy,omitempty"`
+	APIProxy        any    `json:"api_proxy,omitempty"`
 }
 
 func (s *policyServer) handlePolicy(w http.ResponseWriter, r *http.Request) {
@@ -417,7 +418,8 @@ func (s *policyServer) handleGet(w http.ResponseWriter) {
 		Status:          "ok",
 		Mode:            mode,
 		EnforcementMode: s.enforcementMode,
-		Policy:          current,
+		Policy:          policyWithoutAPIProxy(current),
+		APIProxy:        apiProxyStatusFromPolicy(current),
 	})
 }
 
@@ -497,6 +499,10 @@ func (s *policyServer) handlePatch(w http.ResponseWriter, r *http.Request) {
 	if raw == "" {
 		logEgressUpdateFailedWarn("empty patch body")
 		http.Error(w, "empty body", http.StatusBadRequest)
+		return
+	}
+	if hasAPIProxy, err := patchContainsAPIProxy(raw); err == nil && hasAPIProxy {
+		http.Error(w, "api_proxy cannot be modified via PATCH", http.StatusBadRequest)
 		return
 	}
 

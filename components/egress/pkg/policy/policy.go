@@ -19,7 +19,11 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"net/url"
+	"slices"
 	"strings"
+
+	"github.com/alibaba/opensandbox/egress/pkg/constants"
 )
 
 const (
@@ -50,6 +54,32 @@ type NetworkPolicy struct {
 	DefaultAction string       `json:"defaultAction"`
 
 	domainIndex *compiledDomainIndex
+	APIProxy    *APIProxy `json:"api_proxy,omitempty"`
+}
+
+type APIProxy struct {
+	Enabled   bool             `json:"enabled"`
+	Identity  APIProxyIdentity `json:"identity,omitempty"`
+	AuthToken string           `json:"auth_token,omitempty"`
+	Routes    []APIProxyRoute  `json:"routes,omitempty"`
+}
+
+type APIProxyIdentity struct {
+	Organization   string `json:"organization,omitempty"`
+	OrganizationID string `json:"organization_id,omitempty"`
+	UserEmail      string `json:"user_email,omitempty"`
+}
+
+type APIProxyRoute struct {
+	PathPrefix  string `json:"path_prefix"`
+	UpstreamURL string `json:"upstream_url"`
+}
+
+// IsReady returns true when all trusted identity headers are present.
+func (i APIProxyIdentity) IsReady() bool {
+	return strings.TrimSpace(i.Organization) != "" &&
+		strings.TrimSpace(i.OrganizationID) != "" &&
+		strings.TrimSpace(i.UserEmail) != ""
 }
 
 type EgressRule struct {
@@ -162,7 +192,141 @@ func normalizePolicy(p *NetworkPolicy) error {
 		}
 		r.targetKind = targetDomain
 	}
+
+	if err := normalizeAPIProxy(p); err != nil {
+		return err
+	}
 	return nil
+}
+
+func normalizeAPIProxy(p *NetworkPolicy) error {
+	if p.APIProxy == nil {
+		return nil
+	}
+	if !p.APIProxy.Enabled {
+		p.APIProxy.Identity = APIProxyIdentity{}
+		p.APIProxy.AuthToken = ""
+		p.APIProxy.Routes = nil
+		return nil
+	}
+	if !p.APIProxy.Identity.IsReady() {
+		return fmt.Errorf("api_proxy identity requires organization, organization_id, and user_email")
+	}
+	if len(p.APIProxy.Routes) == 0 {
+		return fmt.Errorf("api_proxy routes cannot be empty")
+	}
+
+	seenPrefixes := make(map[string]struct{}, len(p.APIProxy.Routes))
+	internalSuffixes := constants.APIProxyInternalSuffixes()
+	for i := range p.APIProxy.Routes {
+		route := &p.APIProxy.Routes[i]
+		route.PathPrefix = strings.TrimSpace(route.PathPrefix)
+		route.UpstreamURL = strings.TrimSpace(route.UpstreamURL)
+		if err := validateAPIProxyPathPrefix(route.PathPrefix); err != nil {
+			return fmt.Errorf("invalid api_proxy path_prefix %q: %w", route.PathPrefix, err)
+		}
+		if _, exists := seenPrefixes[route.PathPrefix]; exists {
+			return fmt.Errorf("duplicate api_proxy path_prefix %q", route.PathPrefix)
+		}
+		seenPrefixes[route.PathPrefix] = struct{}{}
+		normalizedUpstream, err := validateAPIProxyUpstream(route.UpstreamURL, p.APIProxy.AuthToken != "", internalSuffixes)
+		if err != nil {
+			return fmt.Errorf("invalid api_proxy upstream_url %q: %w", route.UpstreamURL, err)
+		}
+		route.UpstreamURL = normalizedUpstream
+	}
+
+	return nil
+}
+
+// APIProxyUpstreamRules extracts unique hostnames from enabled API proxy
+// routes and returns synthetic allow rules so the DNS proxy and nftables
+// permit the sidecar's own HTTP client to reach its configured upstreams.
+func (p *NetworkPolicy) APIProxyUpstreamRules() []EgressRule {
+	if p == nil || p.APIProxy == nil || !p.APIProxy.Enabled || len(p.APIProxy.Routes) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(p.APIProxy.Routes))
+	var rules []EgressRule
+	for _, route := range p.APIProxy.Routes {
+		parsed, err := url.Parse(route.UpstreamURL)
+		if err != nil {
+			continue
+		}
+		hostname := strings.ToLower(parsed.Hostname())
+		if hostname == "" {
+			continue
+		}
+		if _, ok := seen[hostname]; ok {
+			continue
+		}
+		seen[hostname] = struct{}{}
+		rules = append(rules, EgressRule{
+			Action:     ActionAllow,
+			Target:     hostname,
+			targetKind: targetDomain,
+		})
+	}
+	return rules
+}
+
+func validateAPIProxyPathPrefix(pathPrefix string) error {
+	if pathPrefix == "" {
+		return fmt.Errorf("path_prefix cannot be empty")
+	}
+	if !strings.HasPrefix(pathPrefix, "/") {
+		return fmt.Errorf("path_prefix must start with '/'")
+	}
+	if !strings.HasSuffix(pathPrefix, "/") {
+		return fmt.Errorf("path_prefix must end with '/'")
+	}
+	if strings.Contains(pathPrefix, "?") || strings.Contains(pathPrefix, "#") {
+		return fmt.Errorf("path_prefix cannot include query or fragment")
+	}
+	lower := strings.ToLower(pathPrefix)
+	for _, fragment := range []string{"//", "/./", "/../", "%2f", "%5c", "%2e"} {
+		if strings.Contains(lower, fragment) {
+			return fmt.Errorf("path_prefix contains forbidden fragment %q", fragment)
+		}
+	}
+	return nil
+}
+
+func validateAPIProxyUpstream(raw string, hasAuthToken bool, internalSuffixes []string) (string, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if !slices.Contains([]string{"http", "https"}, parsed.Scheme) {
+		return "", fmt.Errorf("scheme must be http or https")
+	}
+	if parsed.User != nil {
+		return "", fmt.Errorf("credentials are not allowed")
+	}
+	if parsed.Hostname() == "" {
+		return "", fmt.Errorf("host cannot be empty")
+	}
+	host := strings.ToLower(parsed.Hostname())
+	isInternal := false
+	for _, suffix := range internalSuffixes {
+		if strings.HasSuffix(host, suffix) {
+			isInternal = true
+			break
+		}
+	}
+	if parsed.Scheme == "https" && !hasAuthToken {
+		return "", fmt.Errorf("https upstream requires auth_token")
+	}
+	if !isInternal && !hasAuthToken {
+		return "", fmt.Errorf("external upstream requires auth_token")
+	}
+	if !slices.Contains([]string{"", "/"}, parsed.EscapedPath()) {
+		return "", fmt.Errorf("upstream_url must not include a path")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("upstream_url must not include query or fragment")
+	}
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 // WithExtraAllowIPs appends per-IP allow rules (e.g. resolv nameservers, explicit upstream) so client and
