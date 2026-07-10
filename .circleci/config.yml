@@ -3,9 +3,9 @@ version: 2.1
 # CipherOwl fork CI: build the egress sidecar from components/egress and
 # publish it to our container registry, tagged with the git short sha.
 #
-# Branch model: `cipherowl-main` is the CipherOwl release branch (the fork's
-# `main` mirrors upstream alibaba/OpenSandbox). Feature branches and upstream
-# sync merges land on cipherowl-main via PR; only cipherowl-main publishes
+# Branch model: `main` is the CipherOwl mainline (upstream
+# alibaba/OpenSandbox is tracked via the git remote only). Feature branches and
+# upstream sync merges land on main via PR; only main publishes
 # images, so every published tag corresponds to a commit on the release
 # branch, never to in-flight development work.
 #
@@ -99,7 +99,7 @@ workflows:
           filters:
             branches:
               ignore:
-                - cipherowl-main
+                - main
 
   publish-egress:
     jobs:
@@ -108,4 +108,4 @@ workflows:
           filters:
             branches:
               only:
-                - cipherowl-main
+                - main
