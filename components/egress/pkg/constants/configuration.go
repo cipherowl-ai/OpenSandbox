@@ -41,6 +41,11 @@ const (
 
 	EnvEgressAPIProxyEnabled    = "OPENSANDBOX_EGRESS_API_PROXY_ENABLED"
 	EnvEgressAPIProxyListenAddr = "OPENSANDBOX_EGRESS_API_PROXY_LISTEN_ADDR"
+	// EnvEgressAPIProxyInternalSuffixes is a comma-separated list of DNS suffixes
+	// (each must start with ".") whose api-proxy upstreams are treated as internal
+	// and thus exempt from the http auth_token requirement. ".svc.cluster.local"
+	// is always internal.
+	EnvEgressAPIProxyInternalSuffixes = "OPENSANDBOX_EGRESS_API_PROXY_INTERNAL_SUFFIXES"
 
 	// MITM: mitmdump transparent; Linux + CAP_NET_ADMIN, runs as a dedicated user.
 	// Static mitm options (mode, connection_strategy, listen_host, stream_large_bodies,
@@ -96,4 +101,26 @@ func IsTruthy(v string) bool {
 	default:
 		return false
 	}
+}
+
+// DefaultAPIProxyInternalSuffix is always treated as an internal api-proxy
+// upstream suffix (cluster-internal DNS), regardless of configuration.
+const DefaultAPIProxyInternalSuffix = ".svc.cluster.local"
+
+// APIProxyInternalSuffixes returns the lower-cased DNS suffixes whose api-proxy
+// upstreams are considered internal (exempt from the http auth_token
+// requirement). DefaultAPIProxyInternalSuffix is always included; additional
+// suffixes come from EnvEgressAPIProxyInternalSuffixes. Each entry is trimmed
+// and lower-cased; blank entries and any not starting with "." are dropped so a
+// stray value cannot widen the match to arbitrary hosts.
+func APIProxyInternalSuffixes() []string {
+	suffixes := []string{DefaultAPIProxyInternalSuffix}
+	for _, raw := range strings.Split(os.Getenv(EnvEgressAPIProxyInternalSuffixes), ",") {
+		s := strings.ToLower(strings.TrimSpace(raw))
+		if s == "" || !strings.HasPrefix(s, ".") || s == DefaultAPIProxyInternalSuffix {
+			continue
+		}
+		suffixes = append(suffixes, s)
+	}
+	return suffixes
 }

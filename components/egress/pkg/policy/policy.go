@@ -22,6 +22,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/alibaba/opensandbox/egress/pkg/constants"
 )
 
 const (
@@ -215,6 +217,7 @@ func normalizeAPIProxy(p *NetworkPolicy) error {
 	}
 
 	seenPrefixes := make(map[string]struct{}, len(p.APIProxy.Routes))
+	internalSuffixes := constants.APIProxyInternalSuffixes()
 	for i := range p.APIProxy.Routes {
 		route := &p.APIProxy.Routes[i]
 		route.PathPrefix = strings.TrimSpace(route.PathPrefix)
@@ -226,7 +229,7 @@ func normalizeAPIProxy(p *NetworkPolicy) error {
 			return fmt.Errorf("duplicate api_proxy path_prefix %q", route.PathPrefix)
 		}
 		seenPrefixes[route.PathPrefix] = struct{}{}
-		normalizedUpstream, err := validateAPIProxyUpstream(route.UpstreamURL, p.APIProxy.AuthToken != "")
+		normalizedUpstream, err := validateAPIProxyUpstream(route.UpstreamURL, p.APIProxy.AuthToken != "", internalSuffixes)
 		if err != nil {
 			return fmt.Errorf("invalid api_proxy upstream_url %q: %w", route.UpstreamURL, err)
 		}
@@ -289,7 +292,7 @@ func validateAPIProxyPathPrefix(pathPrefix string) error {
 	return nil
 }
 
-func validateAPIProxyUpstream(raw string, hasAuthToken bool) (string, error) {
+func validateAPIProxyUpstream(raw string, hasAuthToken bool, internalSuffixes []string) (string, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return "", err
@@ -303,7 +306,14 @@ func validateAPIProxyUpstream(raw string, hasAuthToken bool) (string, error) {
 	if parsed.Hostname() == "" {
 		return "", fmt.Errorf("host cannot be empty")
 	}
-	isInternal := strings.HasSuffix(parsed.Hostname(), ".svc.cluster.local")
+	host := strings.ToLower(parsed.Hostname())
+	isInternal := false
+	for _, suffix := range internalSuffixes {
+		if strings.HasSuffix(host, suffix) {
+			isInternal = true
+			break
+		}
+	}
 	if parsed.Scheme == "https" && !hasAuthToken {
 		return "", fmt.Errorf("https upstream requires auth_token")
 	}

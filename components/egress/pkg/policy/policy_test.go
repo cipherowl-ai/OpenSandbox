@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alibaba/opensandbox/egress/pkg/constants"
 	"github.com/stretchr/testify/require"
 )
 
@@ -254,4 +255,59 @@ func TestAPIProxyUpstreamRules_StripsPort(t *testing.T) {
 	rules := p.APIProxyUpstreamRules()
 	require.Len(t, rules, 1)
 	require.Equal(t, "config.svc.cluster.local", rules[0].Target, "port should be stripped from hostname")
+}
+
+func TestValidateAPIProxyUpstream_DefaultInternalSuffix(t *testing.T) {
+	suffixes := []string{constants.DefaultAPIProxyInternalSuffix}
+	got, err := validateAPIProxyUpstream("http://config.svc.cluster.local", false, suffixes)
+	require.NoError(t, err, "cluster-internal http upstream needs no auth_token")
+	require.Equal(t, "http://config.svc.cluster.local", got)
+
+	_, err = validateAPIProxyUpstream("http://kyt.dev.aws.cipherowl.net", false, suffixes)
+	require.ErrorContains(t, err, "external upstream requires auth_token")
+
+	_, err = validateAPIProxyUpstream("http://kyt.dev.aws.cipherowl.net", true, suffixes)
+	require.NoError(t, err, "external upstream is allowed when an auth_token is present")
+}
+
+func TestValidateAPIProxyUpstream_ConfiguredInternalSuffix(t *testing.T) {
+	suffixes := []string{constants.DefaultAPIProxyInternalSuffix, ".aws.cipherowl.net"}
+
+	got, err := validateAPIProxyUpstream("http://kyt.dev.aws.cipherowl.net", false, suffixes)
+	require.NoError(t, err, "a configured-internal suffix exempts the upstream from auth_token")
+	require.Equal(t, "http://kyt.dev.aws.cipherowl.net", got)
+
+	// Suffix matching is boundary-safe: a look-alike host is still external.
+	_, err = validateAPIProxyUpstream("http://evilaws.cipherowl.net", false, suffixes)
+	require.ErrorContains(t, err, "external upstream requires auth_token")
+
+	// https still requires an auth_token even for an internal host.
+	_, err = validateAPIProxyUpstream("https://kyt.dev.aws.cipherowl.net", false, suffixes)
+	require.ErrorContains(t, err, "https upstream requires auth_token")
+}
+
+func TestNormalizeAPIProxy_InternalSuffixEnvExemptsAuthToken(t *testing.T) {
+	t.Setenv(constants.EnvEgressAPIProxyInternalSuffixes, ".aws.cipherowl.net")
+	p, err := ParsePolicy(`{
+		"defaultAction":"deny",
+		"api_proxy":{
+			"enabled":true,
+			"identity":{"organization":"test","organization_id":"id1","user_email":"u@t.co"},
+			"routes":[{"path_prefix":"/api/screen/","upstream_url":"http://kyt.dev.aws.cipherowl.net"}]
+		}
+	}`)
+	require.NoError(t, err)
+	require.Equal(t, "http://kyt.dev.aws.cipherowl.net", p.APIProxy.Routes[0].UpstreamURL)
+}
+
+func TestNormalizeAPIProxy_ExternalWithoutTokenRejected(t *testing.T) {
+	_, err := ParsePolicy(`{
+		"defaultAction":"deny",
+		"api_proxy":{
+			"enabled":true,
+			"identity":{"organization":"test","organization_id":"id1","user_email":"u@t.co"},
+			"routes":[{"path_prefix":"/api/screen/","upstream_url":"http://kyt.dev.aws.cipherowl.net"}]
+		}
+	}`)
+	require.ErrorContains(t, err, "external upstream requires auth_token")
 }
