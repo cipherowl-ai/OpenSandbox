@@ -1,0 +1,111 @@
+version: 2.1
+
+# CipherOwl fork CI: build the egress sidecar from components/egress and
+# publish it to our container registry, tagged with the git short sha.
+#
+# Branch model: `cipherowl-main` is the CipherOwl release branch (the fork's
+# `main` mirrors upstream alibaba/OpenSandbox). Feature branches and upstream
+# sync merges land on cipherowl-main via PR; only cipherowl-main publishes
+# images, so every published tag corresponds to a commit on the release
+# branch, never to in-flight development work.
+#
+# Registry coordinates and AWS auth come entirely from the CircleCI org
+# context (CIPHEROWL_ECR_URL, CIRCLECI_OIDC_ARN) — this repo is public, so
+# nothing environment-specific is hardcoded here.
+
+orbs:
+  aws-cli: circleci/aws-cli@5.4.1
+
+jobs:
+  # PR validation: prove the egress image builds. Deliberately context-free
+  # (no credentials) — this repo is public and this job runs on PR pushes.
+  validate-egress:
+    docker:
+      - image: cimg/base:current
+    resource_class: medium
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - run:
+          name: Build the egress image (no push)
+          command: |
+            set -euo pipefail
+            docker build \
+              -f components/egress/Dockerfile \
+              --build-arg VERSION="$(git describe --tags --always --dirty)" \
+              --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
+              --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -t "opensandbox-egress-validate:${CIRCLE_SHA1}" \
+              .
+
+  publish-egress:
+    docker:
+      - image: cimg/aws:2024.03
+    resource_class: medium
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-cli/setup:
+          role_arn: ${CIRCLECI_OIDC_ARN}
+      - run:
+          name: Build and push the egress image
+          command: |
+            set -euo pipefail
+            : "${CIPHEROWL_ECR_URL:?must be provided by the CircleCI context}"
+            ECR_HOST="${CIPHEROWL_ECR_URL}"
+            # Registry hosts look like <account>.dkr.ecr.<region>.amazonaws.com;
+            # derive the region instead of hardcoding it.
+            AWS_REGION="$(printf '%s' "${ECR_HOST}" | sed -E 's/^[^.]+\.dkr\.ecr\.([^.]+)\.amazonaws\.com$/\1/')"
+            REPO_NAME="cipherowl/opensandbox-egress"
+            IMAGE="${ECR_HOST}/${REPO_NAME}"
+            # 7-char short sha, matching the tag convention used by the
+            # manual builds this pipeline replaces.
+            TAG="$(git rev-parse --short=7 HEAD)"
+
+            aws ecr get-login-password --region "${AWS_REGION}" \
+              | docker login --username AWS --password-stdin "${ECR_HOST}"
+
+            # Tags are immutable content addresses (one per commit): if the
+            # tag already exists this is a rebuild of the same commit, not
+            # new content — skip instead of overwriting.
+            if aws ecr describe-images --repository-name "${REPO_NAME}" \
+                --image-ids imageTag="${TAG}" --region "${AWS_REGION}" >/dev/null 2>&1; then
+              echo "${REPO_NAME}:${TAG} already exists — nothing to do."
+              exit 0
+            fi
+
+            # Build context is the repo root (the Dockerfile copies shared
+            # module sources from outside components/egress), same as the
+            # upstream components/egress/build.sh. amd64 only: the target
+            # node pool is amd64.
+            docker build \
+              -f components/egress/Dockerfile \
+              --build-arg VERSION="$(git describe --tags --always --dirty)" \
+              --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
+              --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -t "${IMAGE}:${TAG}" \
+              .
+
+            docker push "${IMAGE}:${TAG}"
+            echo "Pushed ${REPO_NAME}:${TAG}"
+
+workflows:
+  # Runs on PR branches (project triggers fire on PR opened / PR pushes).
+  validate:
+    jobs:
+      - validate-egress:
+          filters:
+            branches:
+              ignore:
+                - cipherowl-main
+
+  publish-egress:
+    jobs:
+      - publish-egress:
+          context: cipherowl_build_context
+          filters:
+            branches:
+              only:
+                - cipherowl-main
