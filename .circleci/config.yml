@@ -17,9 +17,11 @@ orbs:
   aws-cli: circleci/aws-cli@5.4.1
 
 jobs:
-  # PR validation: prove the egress image builds. Deliberately context-free
+  # PR validation: prove the egress image builds. Named "test" to match the
+  # check name GitHub branch protection requires across our repos
+  # (ci/circleci: test). Deliberately context-free
   # (no credentials) — this repo is public and this job runs on PR pushes.
-  validate-egress:
+  test:
     docker:
       - image: cimg/base:current
     resource_class: medium
@@ -95,7 +97,7 @@ workflows:
   # Runs on PR branches (project triggers fire on PR opened / PR pushes).
   validate:
     jobs:
-      - validate-egress:
+      - test:
           filters:
             branches:
               ignore:
