@@ -199,6 +199,37 @@ func TestAPIProxyUpstreamRules_SingleUpstream(t *testing.T) {
 	require.Equal(t, "svc.cipherowl.ai", rules[0].Target)
 }
 
+func TestParsePolicyAPIProxyIdentityUserID(t *testing.T) {
+	p, err := ParsePolicy(`{
+		"defaultAction":"deny",
+		"api_proxy":{
+			"enabled":true,
+			"identity":{"organization":"test","organization_id":"id1","user_email":"u@t.co","user_id":"user-42"},
+			"auth_token":"tok",
+			"routes":[{"path_prefix":"/api/screen/","upstream_url":"https://svc.cipherowl.ai"}]
+		}
+	}`)
+	require.NoError(t, err)
+	require.Equal(t, "user-42", p.APIProxy.Identity.UserID)
+}
+
+func TestParsePolicyAPIProxyIdentityUserIDOptional(t *testing.T) {
+	// user_id must never become required: payloads from callers that predate
+	// the field have to keep parsing, or every sandbox acquire breaks.
+	p, err := ParsePolicy(`{
+		"defaultAction":"deny",
+		"api_proxy":{
+			"enabled":true,
+			"identity":{"organization":"test","organization_id":"id1","user_email":"u@t.co"},
+			"auth_token":"tok",
+			"routes":[{"path_prefix":"/api/screen/","upstream_url":"https://svc.cipherowl.ai"}]
+		}
+	}`)
+	require.NoError(t, err)
+	require.Empty(t, p.APIProxy.Identity.UserID)
+	require.True(t, p.APIProxy.Identity.IsReady())
+}
+
 func TestAPIProxyUpstreamRules_Deduplicates(t *testing.T) {
 	p, err := ParsePolicy(`{
 		"defaultAction":"deny",
