@@ -104,6 +104,7 @@ func TestHandlerStripsForgedHeadersAndInjectsTrustedIdentity(t *testing.T) {
 					Organization:   "acme",
 					OrganizationID: "org-123",
 					UserEmail:      "alice@example.com",
+					UserID:         "user-123",
 				},
 				Routes: []policy.APIProxyRoute{{
 					PathPrefix:  "/api/reason/",
@@ -117,6 +118,7 @@ func TestHandlerStripsForgedHeadersAndInjectsTrustedIdentity(t *testing.T) {
 	req.Header.Set("CipherOwl-Organization", "evil")
 	req.Header.Set("CipherOwl-Organization-Id", "evil-id")
 	req.Header.Set("CipherOwl-User-Email", "evil@example.com")
+	req.Header.Set("CipherOwl-User-Id", "evil-user")
 	req.Header.Set("Authorization", "Bearer fake")
 	req.Header.Set("X-Forwarded-For", "1.2.3.4")
 	w := httptest.NewRecorder()
@@ -128,8 +130,45 @@ func TestHandlerStripsForgedHeadersAndInjectsTrustedIdentity(t *testing.T) {
 	require.Equal(t, "acme", seenHeaders.Get("CipherOwl-Organization"))
 	require.Equal(t, "org-123", seenHeaders.Get("CipherOwl-Organization-Id"))
 	require.Equal(t, "alice@example.com", seenHeaders.Get("CipherOwl-User-Email"))
+	require.Equal(t, "user-123", seenHeaders.Get("CipherOwl-User-Id"))
 	require.Empty(t, seenHeaders.Get("Authorization"))
 	require.Empty(t, seenHeaders.Get("X-Forwarded-For"))
+}
+
+func TestHandlerOmitsUserIDHeaderWhenAbsent(t *testing.T) {
+	var seenHeaders http.Header
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenHeaders = r.Header.Clone()
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer upstream.Close()
+
+	reader := &stubPolicyReader{
+		current: &policy.NetworkPolicy{
+			APIProxy: &policy.APIProxy{
+				Enabled: true,
+				Identity: policy.APIProxyIdentity{
+					Organization:   "acme",
+					OrganizationID: "org-123",
+					UserEmail:      "alice@example.com",
+				},
+				Routes: []policy.APIProxyRoute{{
+					PathPrefix:  "/api/reason/",
+					UpstreamURL: upstream.URL,
+				}},
+			},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/reason/v1/x", nil)
+	req.Header.Set("CipherOwl-User-Id", "evil-user")
+	w := httptest.NewRecorder()
+
+	NewHandler(reader).ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	_, present := seenHeaders["Cipherowl-User-Id"]
+	require.False(t, present, "CipherOwl-User-Id must be absent when identity has no user_id")
 }
 
 func TestHandlerInjectsAuthTokenWhenPresent(t *testing.T) {

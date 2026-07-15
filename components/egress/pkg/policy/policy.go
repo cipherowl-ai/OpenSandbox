@@ -68,6 +68,10 @@ type APIProxyIdentity struct {
 	Organization   string `json:"organization,omitempty"`
 	OrganizationID string `json:"organization_id,omitempty"`
 	UserEmail      string `json:"user_email,omitempty"`
+	// UserID is optional and must stay out of IsReady/normalizeAPIProxy
+	// validation: callers that predate it send no user_id, and rejecting
+	// their policies would break every sandbox acquire.
+	UserID string `json:"user_id,omitempty"`
 }
 
 type APIProxyRoute struct {

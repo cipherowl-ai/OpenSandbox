@@ -195,6 +195,9 @@ func copyHeaders(dst, src http.Header, proxy *policy.APIProxy, userAgent string)
 	dst.Set("CipherOwl-Organization", proxy.Identity.Organization)
 	dst.Set("CipherOwl-Organization-Id", proxy.Identity.OrganizationID)
 	dst.Set("CipherOwl-User-Email", proxy.Identity.UserEmail)
+	if userID := strings.TrimSpace(proxy.Identity.UserID); userID != "" {
+		dst.Set("CipherOwl-User-Id", userID)
+	}
 	if proxy.AuthToken != "" {
 		dst.Set("Authorization", "Bearer "+proxy.AuthToken)
 	}
