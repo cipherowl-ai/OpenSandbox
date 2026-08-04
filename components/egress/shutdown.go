@@ -59,7 +59,7 @@ func waitForShutdown(ctx context.Context, proxy *dnsproxy.Proxy, policySrv *http
 	}
 
 	if mitm != nil {
-		iptables.RemoveTransparentHTTP(mitm.port, mitm.uid)
+		iptables.RemoveTransparentHTTP(mitm.port, mitm.uid, mitm.dports)
 		mitmproxy.GracefulShutdown(mitm.getRunning(), defaultMitmShutdownTimeout)
 	}
 	iptables.RemoveRedirect(15353, exemptDst)
