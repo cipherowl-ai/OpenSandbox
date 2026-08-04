@@ -17,6 +17,8 @@
 Synchronous isolated session service interface.
 """
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
@@ -69,6 +71,16 @@ class IsolationServiceSync(Protocol):
     def create(
         self, request: CreateIsolatedSessionRequest
     ) -> IsolationSessionSync: ...
+
+    def attach(self, session_id: str) -> IsolationSessionSync:
+        """Rebuild a session handle from an existing ``session_id``.
+
+        Synchronous counterpart of the async ``attach``. See the async
+        :class:`opensandbox.services.isolated.IsolationService.attach` for the
+        full contract (creation-parameter echo, older-execd tolerance,
+        not-found propagation).
+        """
+        ...
 
     def capabilities(self) -> IsolatedCapabilities: ...
 

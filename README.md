@@ -238,7 +238,6 @@ OpenSandbox provides examples covering SDK usage, agent integrations, browser au
 
 #### 🧠 Training and Evaluation
 
-- **[rl-training](docs/examples/rl-training.md)** - DQN CartPole training in a sandbox with checkpoints and summary output.
 - **[harbor-evaluation](docs/examples/harbor-evaluation.md)** - Run a [Harbor](https://github.com/harbor-framework/harbor) agent evaluation on OpenSandbox, one sandbox per trial.
 
 For more details, please refer to the [examples documentation](docs/examples/index.md).
@@ -273,7 +272,7 @@ For detailed architecture, see [Architecture](docs/architecture/).
 - [oseps/README.md](oseps/README.md) – OpenSandbox Enhancement Proposals
 - SDK
   - Sandbox base SDK ([Java/Kotlin SDK](sdks/sandbox/kotlin/README.md), [Python SDK](sdks/sandbox/python/README.md), [JavaScript/TypeScript SDK](sdks/sandbox/javascript/README.md), [C#/.NET SDK](sdks/sandbox/csharp/README.md)), [Go SDK](sdks/sandbox/go/README.md) - includes sandbox lifecycle, command execution, file operations
-  - Code Interpreter SDK ([Java/Kotlin SDK](sdks/code-interpreter/kotlin/README.md), [Python SDK](sdks/code-interpreter/python/README.md), [JavaScript/TypeScript SDK](sdks/code-interpreter/javascript/README.md), [C#/.NET SDK](sdks/code-interpreter/csharp/README.md)) - code interpreter
+  - Code Interpreter SDK ([Java/Kotlin SDK](sdks/sandbox/kotlin/code-interpreter/README.md), [Python SDK](sdks/code-interpreter/python/README.md), [JavaScript/TypeScript SDK](sdks/code-interpreter/javascript/README.md), [C#/.NET SDK](sdks/code-interpreter/csharp/README.md)) - code interpreter
 - [cli/README.md](cli/README.md) - OpenSandbox CLI installation and command reference
 - [sdks/mcp/sandbox/python/README.md](sdks/mcp/sandbox/python/README.md) - MCP server installation and client setup
 - [specs/README.md](specs/README.md) - OpenAPI definitions for sandbox lifecycle API and sandbox execution API
@@ -294,7 +293,3 @@ and how roadmap items are managed.
 - Issues: Submit bugs, feature requests, or design discussions through GitHub Issues
 - Discord: Join the [OpenSandbox Discord community](https://discord.gg/g7FuPs8YeD)
 - DingTalk: Join the [OpenSandbox technical discussion group](https://qr.dingtalk.com/action/joingroup?code=v1,k1,A4Bgl5q1I1eNU/r33D18YFNrMY108aFF38V+r19RJOM=&_dt_no_comment=1&origin=11)
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=opensandbox-group/OpenSandbox&type=date&legend=top-left)](https://www.star-history.com/#opensandbox-group/OpenSandbox&type=date&legend=top-left)

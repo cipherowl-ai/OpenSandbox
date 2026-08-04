@@ -231,6 +231,19 @@ func main() {
 }
 ```
 
+::: tip AcquirePolicy
+`AcquirePolicy` controls what happens when the idle buffer is empty **or** the first idle candidate fails its readiness check:
+
+| Policy | Retry across idles | Fallback on exhaustion |
+|---|---|---|
+| `AcquirePolicyFailFast` | no | return `*PoolEmptyError` / `*PoolAcquireFailedError` |
+| `AcquirePolicyDirectCreate` (default) | no | create a new sandbox via lifecycle API |
+| `AcquirePolicyRetryNextIdle` | up to `MaxAcquireRetries` idles | return error |
+| `AcquirePolicyRetryNextIdleThenCreate` | up to `MaxAcquireRetries` idles | create a new sandbox |
+
+Use the `RetryNextIdle*` variants when the pool may contain a mix of healthy and stale idle sandboxes (custom templates with long cold-start; network flap left a few unreachable idles). Each failed candidate still pays up to `AcquireReadyTimeout`, so bound the retry with `MaxAcquireRetries` (default `3`) via `builder.MaxAcquireRetries(n)` or `PoolConfig.MaxAcquireRetries`.
+:::
+
 For distributed deployment with multiple processes or pods, use `RedisPoolStateStore`.
 The store accepts a caller-managed `redis.Client` and does not create or close Redis
 connections.
@@ -416,6 +429,10 @@ client := opensandbox.NewExecdClient(url, token,
 
 ::: info TLS Certificate Strength
 SDK-created HTTP clients enforce NIST 2030 minimum TLS certificate strength by default (RSA >= 2048, EC >= 224, DSA P >= 2048/Q >= 224, hash >= 224). If you must interoperate with legacy endpoints, set `AllowWeakServerCertKeyLengths: true` in `TransportConfig`.
+:::
+
+::: tip SDK Telemetry
+`CreateSandbox` reports create latency to `POST /v1/metrics/events` by default. Set `ConnectionConfig.DisableMetrics` or `OPENSANDBOX_DISABLE_METRICS=1` to opt out. See [SDK Telemetry](/guides/sdk-telemetry).
 :::
 
 ## Error Handling
